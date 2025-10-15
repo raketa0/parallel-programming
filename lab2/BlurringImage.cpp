@@ -3,7 +3,8 @@
 #include <string>
 #include <windows.h>
 #include <vector>
-
+#include <random>
+#include <algorithm>
 
 struct Square
 {
@@ -90,11 +91,65 @@ std::vector<Square> DivideIntoSquares(BITMAPINFOHEADER& infoHeader, const int nu
     return squares;
 }
 
+std::vector<std::vector<Square>> RandomDistributionOfStreams(std::vector<Square> & squares, const int numTheard)
+{
+    std::shuffle(squares.begin(), squares.end(), std::mt19937(std::random_device{}()));
+    std::vector<std::vector<Square>> threadSquares(numTheard);
+
+    for (size_t i = 0; i < squares.size(); i++)
+    {
+        int threadIndex = i % numTheard;
+        threadSquares[threadIndex].push_back(squares[i]);
+    }
+    return threadSquares;
+}
+
+void BoxBlurSquare(unsigned char* initialData, unsigned char* blurredSquare,
+    const BITMAPINFOHEADER& infoHeader, const Square& square, int radius)
+{
+    int width = infoHeader.biWidth;
+    int height = infoHeader.biHeight;
+    int stride = ((width * 3 + 3) & ~3);
+
+    for (int y = square.y0; y < square.y1; ++y)
+    {
+        for (int x = square.x0; x < square.x1; ++x)
+        {
+            int sumB = 0, sumG = 0, sumR = 0;
+            int count = 0;
+
+            for (int dy = -radius; dy <= radius; ++dy)
+            {
+                int ny = y + dy;
+                if (ny < 0 || ny >= height) continue;
+
+                for (int dx = -radius; dx <= radius; ++dx)
+                {
+                    int nx = x + dx;
+                    if (nx < 0 || nx >= width) continue;
+
+                    unsigned char* pixel = initialData + ny * stride + nx * 3;
+                    sumB += pixel[0];
+                    sumG += pixel[1];
+                    sumR += pixel[2];
+                    count++;
+                }
+            }
+
+            unsigned char* outPixel = blurredSquare + y * stride + x * 3;
+            outPixel[0] = static_cast<unsigned char>(sumB / count);
+            outPixel[1] = static_cast<unsigned char>(sumG / count);
+            outPixel[2] = static_cast<unsigned char>(sumR / count);
+        }
+    }
+}
+
+
 int main(int argc, char* argv[])
 {
     if (argc < 5) 
     {
-        std::cout << "Usage: blur.exe input.bmp output.bmp <threads> <cores>\n";
+        std::cout << "Usage: BlurringImage.exe input.bmp output.bmp <threads> <cores>\n";
         return 1;
     }
 
@@ -102,4 +157,5 @@ int main(int argc, char* argv[])
     const std::string outputBlurringImage = argv[2];
     const int numTheard = atoi(argv[3]);
     const int numCores = atoi(argv[4]);
+
 }
