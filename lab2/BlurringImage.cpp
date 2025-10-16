@@ -6,6 +6,16 @@
 #include <random>
 #include <algorithm>
 
+struct ThreadParams
+{
+    unsigned char* initialData;
+    unsigned char* blurredSquare;
+    BITMAPINFOHEADER* infoHeader;
+    std::vector<Square>* squares;
+    int radius;
+    int coreIndex;
+};
+
 struct Square
 {
     int x0;
@@ -144,6 +154,67 @@ void BoxBlurSquare(unsigned char* initialData, unsigned char* blurredSquare,
     }
 }
 
+DWORD WINAPI ThreadProc(LPVOID param)
+{
+    ThreadParams* p = (ThreadParams*)param;
+
+    for (auto& sq : *(p->squares))
+    {
+        BoxBlurSquare(p->initialData, p->blurredSquare, *(p->infoHeader), sq, p->radius);
+    }
+
+    return 0;
+}
+
+void RunBoxBlurMultiCore(unsigned char* src, unsigned char* dst, BITMAPINFOHEADER& infoHeader,
+    std::vector<Square>& allSquares, int radius, int numCoresToUse)
+{
+    SYSTEM_INFO sysInfo;
+    GetSystemInfo(&sysInfo);
+
+    DWORD_PTR fullMask = (1ull << sysInfo.dwNumberOfProcessors) - 1;
+    DWORD_PTR limitedMask = (1ull << numCoresToUse) - 1;
+
+    if (!SetProcessAffinityMask(GetCurrentProcess(), limitedMask))
+    {
+        std::cerr << "Ошибка: не удалось установить affinity mask для процесса.\n";
+        return;
+    }
+
+    auto distributedSquares = RandomDistributionOfStreams(allSquares, numCoresToUse);
+
+    std::vector<HANDLE> handles(numCoresToUse);
+    std::vector<ThreadParams> params(numCoresToUse);
+
+    for (int i = 0; i < numCoresToUse; ++i)
+    {
+        params[i] = 
+        {
+            src,
+            dst,
+            &infoHeader,
+            &distributedSquares[i],
+            radius,
+            i
+        };
+
+        handles[i] = CreateThread(
+            NULL,
+            0,
+            ThreadProc,
+            &params[i],
+            0,
+            NULL
+        );
+    }
+
+    WaitForMultipleObjects(numCoresToUse, handles.data(), TRUE, INFINITE);
+
+    for (auto& h : handles)
+    {
+        CloseHandle(h);
+    }
+}
 
 int main(int argc, char* argv[])
 {
