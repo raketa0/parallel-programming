@@ -1,20 +1,12 @@
-#include <iostream>
+﻿#include <iostream>
 #include <fstream>
 #include <string>
 #include <windows.h>
 #include <vector>
 #include <random>
 #include <algorithm>
+#include <chrono>
 
-struct ThreadParams
-{
-    unsigned char* initialData;
-    unsigned char* blurredSquare;
-    BITMAPINFOHEADER* infoHeader;
-    std::vector<Square>* squares;
-    int radius;
-    int coreIndex;
-};
 
 struct Square
 {
@@ -24,6 +16,29 @@ struct Square
     int x1;
     int y1;
 };
+
+struct ThreadParams
+{
+    unsigned char* initialData;
+    unsigned char* blurredSquare;
+    BITMAPINFOHEADER* infoHeader;
+    std::vector<Square>* squares;
+    int radius;
+    int coreIndex;
+
+    ThreadParams() = default;
+
+    ThreadParams(unsigned char* iData,
+        unsigned char* bSquare,
+        BITMAPINFOHEADER* iHeader,
+        std::vector<Square>* sq,
+        int r,
+        int c)
+        : initialData(iData), blurredSquare(bSquare),
+        infoHeader(iHeader), squares(sq),
+        radius(r), coreIndex(c) {}
+};
+
 
 bool ReadBMP(const char* filename,
     BITMAPFILEHEADER& fileHeader,
@@ -49,6 +64,30 @@ bool ReadBMP(const char* filename,
 
     return true;
 }
+
+bool WriteBMP(const char* filename,
+    BITMAPFILEHEADER fileHeader,
+    BITMAPINFOHEADER infoHeader,
+    unsigned char* data)
+{
+    std::ofstream out(filename, std::ios::binary);
+    if (!out)
+        return false;
+
+    int rowSize = ((infoHeader.biWidth * 3 + 3) & ~3);
+    int imageSize = rowSize * infoHeader.biHeight;
+
+    infoHeader.biSizeImage = imageSize;
+    fileHeader.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + imageSize;
+
+    out.write((char*)&fileHeader, sizeof(fileHeader));
+    out.write((char*)&infoHeader, sizeof(infoHeader));
+    out.write((char*)data, imageSize);
+    out.close();
+
+    return true;
+}
+
 
 std::vector<Square> DivideIntoSquares(BITMAPINFOHEADER& infoHeader, const int numTheard)
 {
@@ -117,41 +156,45 @@ std::vector<std::vector<Square>> RandomDistributionOfStreams(std::vector<Square>
 void BoxBlurSquare(unsigned char* initialData, unsigned char* blurredSquare,
     const BITMAPINFOHEADER& infoHeader, const Square& square, int radius)
 {
-    int width = infoHeader.biWidth;
-    int height = infoHeader.biHeight;
-    int stride = ((width * 3 + 3) & ~3);
-
-    for (int y = square.y0; y < square.y1; ++y)
+    for (size_t i = 0; i < 2; i++)
     {
-        for (int x = square.x0; x < square.x1; ++x)
+        int width = infoHeader.biWidth;
+        int height = infoHeader.biHeight;
+        int stride = ((width * 3 + 3) & ~3);
+
+        for (int y = square.y0; y < square.y1; ++y)
         {
-            int sumB = 0, sumG = 0, sumR = 0;
-            int count = 0;
-
-            for (int dy = -radius; dy <= radius; ++dy)
+            for (int x = square.x0; x < square.x1; ++x)
             {
-                int ny = y + dy;
-                if (ny < 0 || ny >= height) continue;
+                int sumB = 0, sumG = 0, sumR = 0;
+                int count = 0;
 
-                for (int dx = -radius; dx <= radius; ++dx)
+                for (int dy = -radius; dy <= radius; ++dy)
                 {
-                    int nx = x + dx;
-                    if (nx < 0 || nx >= width) continue;
+                    int ny = y + dy;
+                    if (ny < 0 || ny >= height) continue;
 
-                    unsigned char* pixel = initialData + ny * stride + nx * 3;
-                    sumB += pixel[0];
-                    sumG += pixel[1];
-                    sumR += pixel[2];
-                    count++;
+                    for (int dx = -radius; dx <= radius; ++dx)
+                    {
+                        int nx = x + dx;
+                        if (nx < 0 || nx >= width) continue;
+
+                        unsigned char* pixel = initialData + ny * stride + nx * 3;
+                        sumB += pixel[0];
+                        sumG += pixel[1];
+                        sumR += pixel[2];
+                        count++;
+                    }
                 }
-            }
 
-            unsigned char* outPixel = blurredSquare + y * stride + x * 3;
-            outPixel[0] = static_cast<unsigned char>(sumB / count);
-            outPixel[1] = static_cast<unsigned char>(sumG / count);
-            outPixel[2] = static_cast<unsigned char>(sumR / count);
+                unsigned char* outPixel = blurredSquare + y * stride + x * 3;
+                outPixel[0] = static_cast<unsigned char>(sumB / count);
+                outPixel[1] = static_cast<unsigned char>(sumG / count);
+                outPixel[2] = static_cast<unsigned char>(sumR / count);
+            }
         }
     }
+    
 }
 
 DWORD WINAPI ThreadProc(LPVOID param)
@@ -177,7 +220,7 @@ void RunBoxBlurMultiCore(unsigned char* src, unsigned char* dst, BITMAPINFOHEADE
 
     if (!SetProcessAffinityMask(GetCurrentProcess(), limitedMask))
     {
-        std::cerr << "������: �� ������� ���������� affinity mask ��� ��������.\n";
+        std::cerr << "Ошибка: не удалось установить affinity mask для процесса.\n";
         return;
     }
 
@@ -216,17 +259,88 @@ void RunBoxBlurMultiCore(unsigned char* src, unsigned char* dst, BITMAPINFOHEADE
     }
 }
 
+
+void ProcessParallel(const std::string& input, const std::string& output,
+    int numThreads, int numCores, int radius)
+{
+    BITMAPFILEHEADER fileHeader;
+    BITMAPINFOHEADER infoHeader;
+    unsigned char* src = nullptr;
+
+    auto start = std::chrono::high_resolution_clock::now();
+    ReadBMP(input.c_str(), fileHeader, infoHeader, src);
+
+    int size = ((infoHeader.biWidth * 3 + 3) & ~3) * infoHeader.biHeight;
+    unsigned char* dst = new unsigned char[size]();
+
+    auto squares = DivideIntoSquares(infoHeader, numThreads);
+
+    RunBoxBlurMultiCore(src, dst, infoHeader, squares, radius, numCores);
+
+    WriteBMP(output.c_str(), fileHeader, infoHeader, dst);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << "Параллельная обработка: " << elapsed.count() << " секунд\n";
+
+    delete[] src;
+    delete[] dst;
+}
+
+void ProcessSequential(const std::string& input, const std::string& output, int radius)
+{
+    BITMAPFILEHEADER fileHeader;
+    BITMAPINFOHEADER infoHeader;
+    unsigned char* src = nullptr;
+
+    auto start = std::chrono::high_resolution_clock::now();
+    ReadBMP(input.c_str(), fileHeader, infoHeader, src);
+
+    int size = ((infoHeader.biWidth * 3 + 3) & ~3) * infoHeader.biHeight;
+    unsigned char* dst = new unsigned char[size]();
+
+    auto squares = DivideIntoSquares(infoHeader, 1);
+
+
+    for (auto& sq : squares)
+    {
+        BoxBlurSquare(src, dst, infoHeader, sq, radius);
+    }
+
+    WriteBMP(output.c_str(), fileHeader, infoHeader, dst);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << "Последовательная обработка заняла: " << elapsed.count() << " секунд\n";
+
+    delete[] src;
+    delete[] dst;
+}
+
 int main(int argc, char* argv[])
 {
-    if (argc < 5) 
+
+    setlocale(LC_ALL, "Russian");
+
+    if (argc < 6)
     {
         std::cout << "Usage: BlurringImage.exe input.bmp output.bmp <threads> <cores>\n";
         return 1;
     }
+    const std::string inputImage = argv[1];    //"input.bmp";
+    const std::string outputParallel = argv[2];   // "output_parallel.bmp";
+    const std::string outputSequential = argv[3];   //"output_sequential.bmp";
+    const int numThreads = atoi(argv[4]);
+    const int numCores = atoi(argv[5]);
+    const int radius = 7;
 
-    const std::string InputImage = argv[1];
-    const std::string outputBlurringImage = argv[2];
-    const int numTheard = atoi(argv[3]);
-    const int numCores = atoi(argv[4]);
+    std::cout << "=== ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА ===\n";
+    ProcessParallel(inputImage, outputParallel, numThreads, numCores, radius);
 
+    std::cout << "=== ПОСЛЕДОВАТЕЛЬНАЯ ОБРАБОТКА ===\n";
+    ProcessSequential(inputImage, outputSequential, radius);
+
+    std::cout << "Файлы сохранены:\n";
+    std::cout  << outputParallel << "\n";
+    std::cout  << outputSequential << "\n";
 }

@@ -22,4 +22,15 @@
   <ItemGroup>
     <None Include=".gitignore" />
   </ItemGroup>
+  <ItemGroup>
+    <Image Include="input.bmp">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
+    <Image Include="output_parallel.bmp">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
+    <Image Include="output_sequential.bmp">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
+  </ItemGroup>
 </Project>
