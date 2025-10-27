@@ -5,7 +5,7 @@
 #include <iostream>
 CRITICAL_SECTION cs;
 
-const int countOperation = 10;
+const int countOperation = 20;
 std::chrono::high_resolution_clock::time_point start;
 
 void factorial(int n) 
@@ -23,7 +23,7 @@ DWORD WINAPI ThreadProc(CONST LPVOID lpParam)
 	for (int i = 0; i < countOperation; i++)
 	{
 		Sleep(10);
-		factorial(100);
+		factorial(110);
 		auto now = std::chrono::high_resolution_clock::now();
 		auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
 		std::string currentTime = std::to_string(elapsed) + " ms";
@@ -47,7 +47,8 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	handles[0] = CreateThread(NULL, 0, ThreadProc, &threadNums[0], 0, NULL);
 	handles[1] = CreateThread(NULL, 0, ThreadProc, &threadNums[1], 0, NULL);
-
+	SetThreadPriority(handles[0], THREAD_PRIORITY_ABOVE_NORMAL);
+	SetThreadPriority(handles[1], THREAD_PRIORITY_NORMAL);
 	WaitForMultipleObjects(2, handles, true, INFINITE);
 
 	return 0;
