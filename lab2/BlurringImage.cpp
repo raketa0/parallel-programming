@@ -322,16 +322,16 @@ int main(int argc, char* argv[])
 
     setlocale(LC_ALL, "Russian");
 
-    if (argc < 6)
-    {
-        std::cout << "Usage: BlurringImage.exe input.bmp output.bmp <threads> <cores>\n";
-        return 1;
-    }
-    const std::string inputImage = argv[1];    //"input.bmp";
-    const std::string outputParallel = argv[2];   // "output_parallel.bmp";
-    const std::string outputSequential = argv[3];   //"output_sequential.bmp";
-    const int numThreads = atoi(argv[4]);
-    const int numCores = atoi(argv[5]);
+   // if (argc < 6)
+   // {
+    //    std::cout << "Usage: BlurringImage.exe input.bmp output.bmp <threads> <cores>\n";
+     //   return 1;
+   // }
+    const std::string inputImage = "screen.bmp";
+    const std::string outputParallel ="output_parallel.bmp";
+    const std::string outputSequential = "output_sequential.bmp";
+    const int numThreads = 3;
+    const int numCores = 1;
     const int radius = 7;
 
     std::cout << "=== ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА ===\n";
