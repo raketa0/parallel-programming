@@ -9,7 +9,7 @@
 
 auto programStart = std::chrono::high_resolution_clock::now();
 int pixelCountPerThread[3] = { 0 };
-const int MAX_LOG_PIXELS = 50;
+const int MAX_LOG_PIXELS = 20;
 
 
 struct Square
@@ -337,7 +337,7 @@ int main(int argc, char* argv[])
     const std::string outputParallel = "output_parallel.bmp";
     const std::string outputSequential = "output_sequential.bmp";
     const int numThreads = 3;
-    const int numCores = 1;
+    const int numCores = 2;
     const int radius = 7;
 
     std::cout << "=== ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА ===\n";
